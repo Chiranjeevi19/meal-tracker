@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skin & Muscle Tracker (Portable)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom scrollbar */
+        .overflow-x-auto::-webkit-scrollbar { height: 12px; }
+        .overflow-x-auto::-webkit-scrollbar-track { background: #f1f1f1; }
+        .overflow-x-auto::-webkit-scrollbar-thumb { background: #888; border-radius: 6px; }
+        .overflow-x-auto::-webkit-scrollbar-thumb:hover { background: #555; }
+        th, td { min-width: 180px; }
+        .sticky-col { position: sticky; left: 0; background-color: #f8fafc; z-index: 10; box-shadow: 2px 0 5px -2px rgba(0,0,0,0.1); }
+    </style>
+</head>
+<body class="bg-gray-50 font-sans text-sm">
+
+    <div class="container mx-auto p-4">
+        <div class="flex justify-between items-center mb-2">
+            <h1 class="text-2xl font-bold text-blue-800">Skin & Muscle Daily Tracker</h1>
+            <div class="text-xs px-2 py-1 rounded bg-green-100 text-green-700">Offline / Local</div>
+        </div>
+        <p class="mb-4 text-gray-600">Data is saved to this device. Use Export/Import to move data between devices.</p>
+
+        <div class="mb-4 flex flex-wrap gap-2 items-center">
+            <button onclick="clearData()" class="bg-red-100 text-red-700 px-4 py-2 rounded hover:bg-red-200 text-xs font-bold border border-red-200">
+                Reset
+            </button>
+            
+            <!-- Sync Buttons -->
+            <button onclick="exportData()" class="bg-blue-100 text-blue-700 px-4 py-2 rounded hover:bg-blue-200 text-xs font-bold border border-blue-200 flex items-center gap-1">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Export Data
+            </button>
+            <button onclick="importData()" class="bg-purple-100 text-purple-700 px-4 py-2 rounded hover:bg-purple-200 text-xs font-bold border border-purple-200 flex items-center gap-1">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                Import Data
+            </button>
+
+            <button id="undoBtn" onclick="undoData()" class="hidden bg-yellow-100 text-yellow-800 px-4 py-2 rounded hover:bg-yellow-200 text-xs font-bold border border-yellow-200">
+                Undo Reset
+            </button>
+        </div>
+
+        <!-- Import Modal (Hidden by default) -->
+        <div id="importModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+            <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+                <div class="mt-3 text-center">
+                    <h3 class="text-lg leading-6 font-medium text-gray-900">Import Data</h3>
+                    <div class="mt-2 px-7 py-3">
+                        <p class="text-sm text-gray-500 mb-2">Paste your data code here:</p>
+                        <textarea id="importText" class="w-full h-32 border rounded p-2 text-xs font-mono" placeholder="Paste code here..."></textarea>
+                    </div>
+                    <div class="items-center px-4 py-3">
+                        <button onclick="processImport()" class="px-4 py-2 bg-blue-500 text-white text-base font-medium rounded-md w-full shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-300">
+                            Load Data
+                        </button>
+                        <button onclick="closeImport()" class="mt-2 px-4 py-2 bg-gray-100 text-gray-700 text-base font-medium rounded-md w-full shadow-sm hover:bg-gray-200">
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="overflow-x-auto border rounded-lg shadow bg-white">
+            <table class="w-full border-collapse">
+                <thead>
+                    <tr class="bg-blue-600 text-white" id="headerRow">
+                        <th class="p-3 text-left border-b sticky-col bg-blue-700">Category / Date</th>
+                    </tr>
+                </thead>
+                <tbody id="trackerBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const startDate = new Date("2025-11-25");
+        const endDate = new Date("2025-12-18");
+        let backupData = {}; // Store data temporarily for undo
+
+        const categories = [
+            {
+                title: "Breakfast",
+                id: "breakfast",
+                type: "select",
+                options: [
+                    "3 Eggs + Nuts + Soy/PB Shake",
+                    "3 Eggs + Nuts + Plain Soy Milk",
+                    "Millet Idli + 3 Eggs + Nuts",
+                    "Oats + Soy Milk + Nuts + 3 Eggs",
+                    "California Burrito (Emergency)"
+                ]
+            },
+            {
+                title: "Lunch (+ Curd)",
+                id: "lunch",
+                type: "select",
+                options: [
+                    "Paneer + Rice + Curd",
+                    "Rajma/Chole Curry + Rice + Veg + Curd",
+                    "Soy Chunk Curry + Rice + Veg + Curd",
+                    "Kala Chana Curry + Rice + Veg + Curd",
+                    "Chicken Curry + Dal + Rice + Curd",
+                    "Dal + Veggies + Rice + Lassi/Curd"
+                ]
+            },
+            {
+                title: "Pre-Workout Snack",
+                id: "preWorkout",
+                type: "select",
+                options: [
+                    "2 Boiled Eggs + Banana",
+                    "Chicken Salad (4:30PM)",
+                    "Amul Protein Lassi",
+                    "Fruit + Nuts"
+                ]
+            },
+            {
+                title: "Gym / Activity",
+                id: "gym",
+                type: "checkbox",
+                label: "Workout Completed"
+            },
+            {
+                title: "Dinner (+ Curd)",
+                id: "dinner",
+                type: "select",
+                options: [
+                    "Paneer + Rice + Curd",
+                    "Paneer Bhurji + Veggies + Rice + Curd",
+                    "Chicken Stir-fry + Veggies + Rice + Curd",
+                    "Veggies + Protein Shake + Rice + Curd",
+                    "Veggies + 2 Cups Skyr + Rice",
+                    "Dal + Curd + Veggies + Rice",
+                    "California Burrito Salad + Curd"
+                ]
+            }
+        ];
+
+        function getDates(start, end) {
+            const dateArray = [];
+            let currentDate = new Date(start);
+            while (currentDate <= end) {
+                dateArray.push(new Date(currentDate));
+                currentDate.setDate(currentDate.getDate() + 1);
+            }
+            return dateArray;
+        }
+
+        const dates = getDates(startDate, endDate);
+
+        function renderTable() {
+            const theadRow = document.getElementById("headerRow");
+            const tbody = document.getElementById("trackerBody");
+
+            while (theadRow.children.length > 1) {
+                theadRow.removeChild(theadRow.lastChild);
+            }
+            tbody.innerHTML = "";
+
+            dates.forEach(date => {
+                const th = document.createElement("th");
+                th.className = "p-3 border-b border-blue-400 min-w-[140px]";
+                const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
+                const dateStr = date.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
+                
+                th.innerHTML = `<div class="text-center"><div class="font-bold text-lg">${dateStr}</div><div class="text-blue-100 font-normal">${dayName}</div></div>`;
+                theadRow.appendChild(th);
+            });
+
+            categories.forEach((cat, index) => {
+                const tr = document.createElement("tr");
+                tr.className = index % 2 === 0 ? "bg-white" : "bg-gray-50";
+
+                const tdTitle = document.createElement("td");
+                tdTitle.className = "p-3 border-r font-medium text-gray-700 sticky-col " + (index % 2 === 0 ? "bg-white" : "bg-gray-50");
+                tdTitle.innerHTML = `<div>${cat.title}</div>`;
+                if(cat.label) {
+                    tdTitle.innerHTML += `<div class="text-xs text-gray-400 mt-1">${cat.label}</div>`;
+                }
+                tr.appendChild(tdTitle);
+
+                dates.forEach(date => {
+                    const td = document.createElement("td");
+                    td.className = "p-2 border text-center align-top";
+                    const dateKey = date.toISOString().split('T')[0];
+                    const storageKey = `${cat.id}_${dateKey}`;
+                    const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
+
+                    const savedValue = localStorage.getItem(storageKey) || "";
+
+                    if (cat.isWeekly && dayName !== 'Wed') {
+                        td.innerHTML = `<span class="text-gray-300">-</span>`;
+                    } else if (cat.type === "select") {
+                        const select = document.createElement("select");
+                        select.className = "w-full p-1 border rounded text-xs bg-white";
+                        select.innerHTML = `<option value="" class="text-gray-400">Select...</option>` + 
+                            cat.options.map(opt => `<option value="${opt}">${opt}</option>`).join("");
+                        
+                        select.value = savedValue;
+                        select.addEventListener("change", (e) => {
+                            localStorage.setItem(storageKey, e.target.value);
+                            updateRowColor(select, e.target.value);
+                        });
+                        updateRowColor(select, savedValue);
+                        td.appendChild(select);
+
+                    } else if (cat.type === "checkbox") {
+                        const label = document.createElement("label");
+                        label.className = "flex justify-center items-center h-full cursor-pointer p-2 hover:bg-gray-100 rounded";
+                        
+                        const checkbox = document.createElement("input");
+                        checkbox.type = "checkbox";
+                        checkbox.className = "w-5 h-5 text-green-600 rounded focus:ring-green-500 border-gray-300";
+                        checkbox.checked = savedValue === "true";
+                        
+                        checkbox.addEventListener("change", (e) => {
+                            localStorage.setItem(storageKey, e.target.checked);
+                            updateCheckColor(label, e.target.checked);
+                        });
+                        updateCheckColor(label, checkbox.checked);
+                        
+                        label.appendChild(checkbox);
+                        td.appendChild(label);
+                    }
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+        }
+
+        function updateRowColor(element, value) {
+            if (value) {
+                element.classList.add("border-green-500", "bg-green-50", "text-green-800");
+            } else {
+                element.classList.remove("border-green-500", "bg-green-50", "text-green-800");
+            }
+        }
+
+        function updateCheckColor(element, checked) {
+            if (checked) {
+                element.classList.add("bg-green-100");
+            } else {
+                element.classList.remove("bg-green-100");
+            }
+        }
+
+        // --- Data Management ---
+
+        function clearData() {
+            if(confirm("Are you sure you want to RESET all tracking data? This will clear everything you've ticked.")) {
+                backupData = { ...localStorage };
+                localStorage.clear();
+                renderTable();
+                document.getElementById("undoBtn").classList.remove("hidden");
+                setTimeout(() => {
+                    document.getElementById("undoBtn").classList.add("hidden");
+                    backupData = {}; 
+                }, 60000);
+            }
+        }
+
+        function undoData() {
+            if (Object.keys(backupData).length === 0) {
+                alert("Undo expired or empty.");
+                return;
+            }
+            for (let key in backupData) {
+                localStorage.setItem(key, backupData[key]);
+            }
+            backupData = {};
+            renderTable();
+            document.getElementById("undoBtn").classList.add("hidden");
+            alert("Data restored!");
+        }
+
+        // --- Export / Import ---
+
+        function exportData() {
+            const data = JSON.stringify(localStorage);
+            // Simple Base64 encoding to make it look like a "code"
+            const encodedData = btoa(encodeURIComponent(data));
+            
+            // Copy to clipboard
+            navigator.clipboard.writeText(encodedData).then(() => {
+                alert("Data code copied to clipboard! Send this code to your other device.");
+            }).catch(err => {
+                prompt("Copy this code manually:", encodedData);
+            });
+        }
+
+        function importData() {
+            document.getElementById('importModal').classList.remove('hidden');
+        }
+
+        function closeImport() {
+            document.getElementById('importModal').classList.add('hidden');
+            document.getElementById('importText').value = '';
+        }
+
+        function processImport() {
+            const input = document.getElementById('importText').value;
+            if (!input) return;
+
+            try {
+                // Decode
+                const jsonString = decodeURIComponent(atob(input));
+                const importedData = JSON.parse(jsonString);
+
+                if (confirm("This will OVERWRITE current data with the imported data. Are you sure?")) {
+                    localStorage.clear();
+                    for (let key in importedData) {
+                        localStorage.setItem(key, importedData[key]);
+                    }
+                    renderTable();
+                    closeImport();
+                    alert("Import successful!");
+                }
+            } catch (e) {
+                alert("Invalid data code. Please check and try again.");
+                console.error(e);
+            }
+        }
+
+        // Initialize
+        renderTable();
+    </script>
+</body>
+</html>
